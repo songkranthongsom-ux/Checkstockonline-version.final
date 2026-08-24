@@ -6,6 +6,7 @@ import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
 import crypto from 'crypto';
+import nodemailer from 'nodemailer';
 
 dotenv.config();
 
@@ -648,6 +649,54 @@ app.post('/api/requests', async (req, res) => {
     
     const actorName = requireActor(req);
     await logAction('เบิกอุปกรณ์', actorName, `สร้างคำขอเบิก ${requestsData.length} รายการ (Ticket ID: ${ticketId})`, 'สำเร็จ');
+
+    // --- E-mail Notification Logic ---
+    try {
+      const { SMTP_USER, SMTP_PASS, NOTIFICATION_EMAIL } = process.env;
+      if (SMTP_USER && SMTP_PASS && NOTIFICATION_EMAIL) {
+        const transporter = nodemailer.createTransport({
+          service: 'gmail',
+          auth: {
+            user: SMTP_USER,
+            pass: SMTP_PASS
+          }
+        });
+
+        const itemListHtml = requestsData.map(reqItem => {
+          const item = items.find(i => i.id === reqItem.itemId);
+          const itemName = item ? item.name : 'Unknown Item';
+          return `<li>${itemName} - จำนวน: ${reqItem.quantity}</li>`;
+        }).join('');
+
+        const mailOptions = {
+          from: `"Checkstock System" <${SMTP_USER}>`,
+          to: NOTIFICATION_EMAIL,
+          subject: `🔔 แจ้งเตือนคำร้องใหม่: ${ticketId} จาก ${req.auth.name || 'ไม่ระบุชื่อ'}`,
+          html: `
+            <div style="font-family: sans-serif; padding: 20px;">
+              <h2 style="color: #2563eb;">มีคำร้องขอเบิกอุปกรณ์ใหม่</h2>
+              <p><strong>Ticket ID:</strong> ${ticketId}</p>
+              <p><strong>ผู้เบิก:</strong> ${req.auth.name || 'ไม่ทราบชื่อ'} (รหัสพนักงาน: ${req.auth.employeeId || 'N/A'})</p>
+              <p><strong>เวลา:</strong> ${now}</p>
+              <h3>รายการที่ขอเบิก:</h3>
+              <ul>
+                ${itemListHtml}
+              </ul>
+              <hr/>
+              <p style="color: #6b7280; font-size: 14px;">อีเมลฉบับนี้ส่งจากระบบ Checkstockonline โดยอัตโนมัติ กรุณาเข้าสู่ระบบเพื่อตรวจสอบและดำเนินการต่อไป</p>
+            </div>
+          `
+        };
+        
+        // Send email asynchronously without blocking the API response
+        transporter.sendMail(mailOptions).catch(err => console.error('Failed to send email notification:', err));
+      } else {
+        console.warn('Skipping email notification: SMTP environment variables are not fully configured.');
+      }
+    } catch (mailErr) {
+      console.error('Error preparing email notification:', mailErr);
+    }
+    // --------------------------------
 
     res.status(201).json({ message: 'Requests created', ticketId });
   } catch (err) {
