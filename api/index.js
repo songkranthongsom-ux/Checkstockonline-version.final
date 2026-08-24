@@ -585,6 +585,7 @@ app.post('/api/requests', async (req, res) => {
     const itemHeaders = await getHeaders('Items');
 
     const rowsToAppend = [];
+    const emailSummaryData = [];
     for (let index = 0; index < requestsData.length; index++) {
       const reqItem = requestsData[index];
       reqItem.id = `req_${Date.now()}_${index}`;
@@ -605,23 +606,31 @@ app.post('/api/requests', async (req, res) => {
       const reqQty = Number(reqItem.quantity || 0);
       if (!item || !Number.isSafeInteger(reqQty) || reqQty < 1) return res.status(400).json({ error: `Invalid item or quantity at position ${index + 1}` });
       const currentStock = item ? Number(item.currentStock || 0) : 0;
+      
+      const itemName = item ? item.name : 'Unknown Item';
+      let emailStatusHtml = '';
 
       if (isRestock) {
         // Restock request: don't subtract stock, just leave it PENDING
         reqItem.status = 'PENDING';
+        emailStatusHtml = `<span style="color: #6b7280;">(นำของเข้า/ปรับสต๊อก)</span>`;
         rowsToAppend.push(headers.map(h => reqItem[h] !== undefined ? reqItem[h] : ''));
       } else if (item && reqQty > 0) {
         if (currentStock >= reqQty) {
           reqItem.status = 'COLLECTED';
+          emailStatusHtml = `<span style="color: #16a34a;">🟢 มีของพร้อมจ่ายทันที ${reqQty}</span>`;
           item.currentStock = currentStock - reqQty;
           const itemRowData = itemHeaders.map(h => item[h] !== undefined ? item[h] : '');
           await updateRowInSheet('Items', item._rowIndex, itemRowData);
           rowsToAppend.push(headers.map(h => reqItem[h] !== undefined ? reqItem[h] : ''));
         } else if (currentStock > 0) {
+          const pendingQty = reqQty - currentStock;
+          emailStatusHtml = `<span style="color: #eab308;">🟡 มีของพร้อมจ่าย ${currentStock}</span> / <span style="color: #dc2626;">🔴 ต้องรอสั่งเพิ่ม ${pendingQty}</span>`;
+          
           const reqItemCollected = { ...reqItem, id: `${reqItem.id}_C`, quantity: currentStock, status: 'COLLECTED' };
           rowsToAppend.push(headers.map(h => reqItemCollected[h] !== undefined ? reqItemCollected[h] : ''));
 
-          const reqItemPending = { ...reqItem, id: `${reqItem.id}_P`, quantity: reqQty - currentStock, status: 'PENDING' };
+          const reqItemPending = { ...reqItem, id: `${reqItem.id}_P`, quantity: pendingQty, status: 'PENDING' };
           rowsToAppend.push(headers.map(h => reqItemPending[h] !== undefined ? reqItemPending[h] : ''));
 
           item.currentStock = 0;
@@ -629,12 +638,20 @@ app.post('/api/requests', async (req, res) => {
           await updateRowInSheet('Items', item._rowIndex, itemRowData);
         } else {
           reqItem.status = 'PENDING';
+          emailStatusHtml = `<span style="color: #dc2626;">🔴 ไม่มีของในสต๊อก (รอสั่งเพิ่ม ${reqQty})</span>`;
           rowsToAppend.push(headers.map(h => reqItem[h] !== undefined ? reqItem[h] : ''));
         }
       } else {
         reqItem.status = 'PENDING';
+        emailStatusHtml = `<span style="color: #dc2626;">🔴 ข้อมูลผิดพลาด (Item Not Found)</span>`;
         rowsToAppend.push(headers.map(h => reqItem[h] !== undefined ? reqItem[h] : ''));
       }
+      
+      emailSummaryData.push({
+        name: itemName,
+        qty: reqQty,
+        statusHtml: emailStatusHtml
+      });
     }
 
     if (!sheets) throw new Error('Sheets API not configured');
@@ -662,10 +679,13 @@ app.post('/api/requests', async (req, res) => {
           }
         });
 
-        const itemListHtml = requestsData.map(reqItem => {
-          const item = items.find(i => i.id === reqItem.itemId);
-          const itemName = item ? item.name : 'Unknown Item';
-          return `<li>${itemName} - จำนวน: ${reqItem.quantity}</li>`;
+        const itemListHtml = emailSummaryData.map((data, idx) => {
+          return `
+            <li style="margin-bottom: 10px;">
+              <strong>${idx + 1}. ${data.name}</strong> - ขอเบิก: ${data.qty}<br/>
+              <span style="font-size: 14px;">👉 สถานะ: ${data.statusHtml}</span>
+            </li>
+          `;
         }).join('');
 
         const mailOptions = {

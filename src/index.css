@@ -57,6 +57,10 @@
   100% { transform: translate(var(--tx), var(--ty)) scale(0); opacity: 0; }
 }
 
+@keyframes shimmer {
+  100% { transform: translateX(100%); }
+}
+
 @layer utilities {
   .animate-heart-burst {
     animation: heartBurst 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
