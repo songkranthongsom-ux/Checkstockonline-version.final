@@ -51,7 +51,16 @@ export const Login = () => {
         setErrorMessage('กรุณากรอกรหัสพนักงานและรหัสผ่าน');
         return;
       }
-      if (await login(employeeId, pa  return (
+      if (await login(employeeId, password)) {
+        navigate('/dashboard');
+      } else {
+        setError(true);
+        setErrorMessage('รหัสพนักงานหรือรหัสผ่านไม่ถูกต้อง');
+      }
+    }
+  };
+
+  return (
     <div 
       className="min-h-screen flex flex-col items-center justify-center p-4 bg-cover bg-center bg-no-repeat relative"
       style={{ backgroundImage: "url('/bg-full.jpg')" }}
