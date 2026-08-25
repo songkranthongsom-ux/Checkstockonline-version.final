@@ -83,7 +83,7 @@ export const Layout = () => {
               <NavItem to="/coordinator/batches" icon={<Package />} label="สรุปรายการเบิก" onNavigate={closeSidebar} badge={batchBadge} />
             </>
           )}
-          {isAdmin && <><NavGroup label="ผู้ดูแลระบบ" /><NavItem to="/admin/reports" icon={<FileText />} label="รายงานและสรุปผล" onNavigate={closeSidebar} /><NavItem to="/admin/items" icon={<Settings />} label="จัดการอุปกรณ์" onNavigate={closeSidebar} /><NavItem to="/admin/stock" icon={<Archive />} label="ตรวจนับสต็อก" onNavigate={closeSidebar} /><NavItem to="/admin/users" icon={<Users />} label="จัดการผู้ใช้" onNavigate={closeSidebar} /><NavItem to="/admin/logs" icon={<History />} label="Log ระบบบันทึกประวัติ" onNavigate={closeSidebar} /></>}
+          {isAdmin && <><NavGroup label="ผู้ดูแลระบบ" /><NavItem to="/admin/reports" icon={<FileText />} label="รายงานและสรุปผล" onNavigate={closeSidebar} /><NavItem to="/admin/items" icon={<Archive />} label="จัดการอุปกรณ์" onNavigate={closeSidebar} /><NavItem to="/admin/stock" icon={<Archive />} label="ตรวจนับสต็อก" onNavigate={closeSidebar} /><NavItem to="/admin/users" icon={<Users />} label="จัดการผู้ใช้" onNavigate={closeSidebar} /><NavItem to="/admin/logs" icon={<History />} label="Log ระบบบันทึกประวัติ" onNavigate={closeSidebar} /><NavItem to="/admin/settings" icon={<Settings />} label="ตั้งค่าระบบ" onNavigate={closeSidebar} /></>}
         </nav>
 
         <div className="border-t border-border p-4">

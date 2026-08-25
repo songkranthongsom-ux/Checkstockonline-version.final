@@ -20,6 +20,7 @@ import { AdminUsers } from './pages/AdminUsers';
 import { AdminReports } from './pages/AdminReports';
 import { AdminStock } from './pages/AdminStock';
 import { SystemLogs } from './pages/SystemLogs';
+import { AdminSettings } from './pages/AdminSettings';
 import { Toaster } from 'sonner';
 
 // Route Guard
@@ -57,6 +58,7 @@ export default function App() {
               <Route path="admin/stock" element={<AdminStock />} />
               <Route path="admin/users" element={<AdminUsers />} />
               <Route path="admin/logs" element={<SystemLogs />} />
+              <Route path="admin/settings" element={<AdminSettings />} />
             </Route>
 
             <Route path="*" element={<Navigate to="/login" replace />} />

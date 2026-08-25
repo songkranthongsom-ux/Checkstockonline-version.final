@@ -338,6 +338,17 @@ app.get('/api/sync', async (req, res) => {
     const batches = rowsToObjects(valueRanges[4]?.values);
     const categories = rowsToObjects(valueRanges[5]?.values);
 
+    let settings = [];
+    try {
+      const settingsResponse = await sheets.spreadsheets.values.get({
+        spreadsheetId: SPREADSHEET_ID,
+        range: 'Settings!A:Z',
+      });
+      settings = rowsToObjects(settingsResponse.data.values);
+    } catch (e) {
+      // Ignore if Settings sheet doesn't exist yet
+    }
+
     // Format roles for users
     const isAdmin = req.auth.role.includes('ADMIN');
     const formattedUsers = isAdmin ? users.map(safeUser) : [safeUser(req.auth)];
@@ -348,7 +359,8 @@ app.get('/api/sync', async (req, res) => {
       items,
       requests: isAdmin ? requests : requests.filter(request => request.userId === req.auth.id),
       batches: isAdmin ? batches : [],
-      categories
+      categories,
+      settings: isAdmin ? settings : []
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -424,6 +436,42 @@ app.delete('/api/users/:id', requireAdmin, async (req, res) => {
     if (!target) return res.status(404).json({ error: 'Not found' });
     await deleteRowInSheet('Users', target._rowIndex);
     res.json({ message: 'Deleted successfully' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// --- Settings Routes ---
+app.post('/api/settings', requireAdmin, async (req, res) => {
+  try {
+    const { key, value } = req.body;
+    if (!key) return res.status(400).json({ error: 'Key is required' });
+    
+    let headers;
+    try {
+      headers = await getHeaders('Settings');
+    } catch (e) {
+      headers = ['key', 'value'];
+    }
+    
+    let settings = [];
+    try {
+      settings = await readSheet('Settings');
+    } catch (e) {} // If empty or doesn't exist
+    
+    const target = settings.find(s => s.key === key);
+    
+    if (target) {
+      target.value = value;
+      const rowData = headers.map(h => target[h] !== undefined ? target[h] : '');
+      await updateRowInSheet('Settings', target._rowIndex, rowData);
+    } else {
+      const newSetting = { key, value };
+      const rowData = headers.map(h => newSetting[h] !== undefined ? newSetting[h] : '');
+      await appendToSheet('Settings', rowData);
+    }
+    
+    res.json({ message: 'Settings updated' });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -669,7 +717,19 @@ app.post('/api/requests', async (req, res) => {
 
     // --- E-mail Notification Logic ---
     try {
-      const { SMTP_USER, SMTP_PASS, NOTIFICATION_EMAIL } = process.env;
+      const { SMTP_USER, SMTP_PASS } = process.env;
+      let NOTIFICATION_EMAIL = process.env.NOTIFICATION_EMAIL;
+
+      try {
+        const settingsData = await readSheet('Settings');
+        const emailSetting = settingsData.find(s => s.key === 'NOTIFICATION_EMAIL');
+        if (emailSetting && emailSetting.value) {
+          NOTIFICATION_EMAIL = emailSetting.value;
+        }
+      } catch (e) {
+        // Ignore if Settings sheet doesn't exist
+      }
+
       if (SMTP_USER && SMTP_PASS && NOTIFICATION_EMAIL) {
         const transporter = nodemailer.createTransport({
           service: 'gmail',

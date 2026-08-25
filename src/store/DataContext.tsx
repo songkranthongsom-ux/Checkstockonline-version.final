@@ -10,6 +10,7 @@ interface DataContextType {
   requests: RequisitionRequest[];
   batches: ConsolidatedBatch[];
   categories: { id: string, name: string }[];
+  settings: { key: string, value: string }[];
   
   // Mutations
   addRequest: (req: Omit<RequisitionRequest, 'id' | 'createdAt' | 'updatedAt' | 'status'>) => void;
@@ -31,6 +32,7 @@ interface DataContextType {
   
   addCategory: (name: string) => Promise<void>;
   deleteCategory: (id: string) => Promise<void>;
+  updateSetting: (key: string, value: string) => Promise<void>;
 }
 
 const DataContext = createContext<DataContextType | undefined>(undefined);
@@ -42,6 +44,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [requests, setRequests] = useState<RequisitionRequest[]>([]);
   const [batches, setBatches] = useState<ConsolidatedBatch[]>([]);
   const [categories, setCategories] = useState<{id: string, name: string}[]>([]);
+  const [settings, setSettings] = useState<{key: string, value: string}[]>([]);
 
   const loadData = async (isBackground = false) => {
     try {
@@ -69,6 +72,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setRequests(data.requests || []);
         setBatches(data.batches || []);
         setCategories(data.categories || []);
+        setSettings(data.settings || []);
 
         // Update local storage auth user just in case roles changed
         const savedAuth = localStorage.getItem('auth_user');
@@ -290,22 +294,58 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const deleteCategory = async (id: string) => {
     try {
-      const response = await fetch(`${API_URL}/categories/${id}`, { method: 'DELETE', headers: getHeaders() });
-      if (!response.ok) throw new Error('Could not delete category');
+      const response = await fetch(`${API_URL}/categories/${id}`, {
+        method: 'DELETE',
+        headers: getHeaders()
+      });
+      if (!response.ok) throw new Error('Failed to delete category');
       await loadData();
-    } catch (error) {
-      console.error(error);
-      throw error;
+    } catch (err) {
+      console.error(err);
+      throw err;
+    }
+  };
+
+  const updateSetting = async (key: string, value: string) => {
+    try {
+      const response = await fetch(`${API_URL}/settings`, {
+        method: 'POST',
+        headers: getHeaders(),
+        body: JSON.stringify({ key, value })
+      });
+      if (!response.ok) throw new Error('Failed to update setting');
+      await loadData();
+    } catch (err) {
+      console.error(err);
+      throw err;
     }
   };
 
   return (
     <DataContext.Provider value={{
-      departments, items, users, requests, batches, categories,
-      addRequest, addRequests, updateRequestStatus, deleteRequest,
-      createBatch, updateBatchStatus, distributeBatch,
-      addItem, updateItem, deleteItem, addUser, deleteUser, updateUser,
-      addCategory, deleteCategory
+      departments,
+      items,
+      users,
+      requests,
+      batches,
+      categories,
+      settings,
+      addRequest,
+      addRequests,
+      updateRequestStatus,
+      deleteRequest,
+      createBatch,
+      updateBatchStatus,
+      distributeBatch,
+      addItem,
+      updateItem,
+      deleteItem,
+      addUser,
+      deleteUser,
+      updateUser,
+      addCategory,
+      deleteCategory,
+      updateSetting
     }}>
       {children}
     </DataContext.Provider>
