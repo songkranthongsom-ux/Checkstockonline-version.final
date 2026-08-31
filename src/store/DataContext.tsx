@@ -206,7 +206,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const updateItem = async (id: string, item: Partial<Item>, _actorName?: string) => {
     try {
-      const response = await fetch(`${API_URL}/items/${id}`, {
+      const response = await fetch(`${API_URL}/items/${encodeURIComponent(id)}`, {
         method: 'PATCH',
         headers: getHeaders(),
         body: JSON.stringify(item)
@@ -221,7 +221,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const deleteItem = async (id: string, _actorName?: string) => {
     try {
-      const response = await fetch(`${API_URL}/items/${id}`, {
+      const response = await fetch(`${API_URL}/items/${encodeURIComponent(id)}`, {
         method: 'DELETE',
         headers: getHeaders()
       });
@@ -252,7 +252,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const deleteUser = async (id: string) => {
     try {
-      const response = await fetch(`${API_URL}/users/${id}`, { method: 'DELETE', headers: getHeaders() });
+      const response = await fetch(`${API_URL}/users/${encodeURIComponent(id)}`, { method: 'DELETE', headers: getHeaders() });
       if (!response.ok) return false;
       await loadData();
       return true;
@@ -264,7 +264,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const updateUser = async (id: string, updates: Partial<User>) => {
     try {
-      const response = await fetch(`${API_URL}/users/${id}`, {
+      const response = await fetch(`${API_URL}/users/${encodeURIComponent(id)}`, {
         method: 'PATCH',
         headers: getHeaders(),
         body: JSON.stringify(updates)
@@ -294,7 +294,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const deleteCategory = async (id: string) => {
     try {
-      const response = await fetch(`${API_URL}/categories/${id}`, {
+      const response = await fetch(`${API_URL}/categories/${encodeURIComponent(id)}`, {
         method: 'DELETE',
         headers: getHeaders()
       });

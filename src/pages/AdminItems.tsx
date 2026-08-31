@@ -46,7 +46,18 @@ export const AdminItems = () => {
     }
     setEditingId(null);
   };
-  const confirmDeleteItem = () => { if (itemToDelete) { deleteItem(itemToDelete.id, user.name); toast.success('ลบอุปกรณ์เรียบร้อยแล้ว'); setItemToDelete(null); } };
+  const confirmDeleteItem = async () => {
+    if (itemToDelete) {
+      try {
+        await deleteItem(itemToDelete.id, user.name);
+        toast.success('ลบอุปกรณ์เรียบร้อยแล้ว');
+      } catch (error) {
+        toast.error('ไม่สามารถลบอุปกรณ์ได้');
+      } finally {
+        setItemToDelete(null);
+      }
+    }
+  };
   const [activeCategory, setActiveCategory] = useState<string | 'ทั้งหมด'>('ทั้งหมด');
 
   const handleAddCategory = () => {
@@ -57,10 +68,14 @@ export const AdminItems = () => {
     }
   };
 
-  const handleDeleteCategory = (catId: string) => {
+  const handleDeleteCategory = async (catId: string) => {
     if (confirm('คุณแน่ใจหรือไม่ว่าต้องการลบหมวดหมู่นี้?')) {
-      deleteCategory(catId);
-      toast.success('ลบหมวดหมู่เรียบร้อยแล้ว');
+      try {
+        await deleteCategory(catId);
+        toast.success('ลบหมวดหมู่เรียบร้อยแล้ว');
+      } catch (error) {
+        toast.error('ไม่สามารถลบหมวดหมู่ได้');
+      }
     }
   };
   
