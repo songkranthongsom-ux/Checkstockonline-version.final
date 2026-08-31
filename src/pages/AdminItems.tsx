@@ -303,10 +303,11 @@ export const AdminItems = () => {
 
       {itemToDelete && (
         <ConfirmDialog
+          isOpen={!!itemToDelete}
           title="ยืนยันการลบอุปกรณ์"
-          message={`คุณแน่ใจหรือไม่ว่าต้องการลบ "${itemToDelete.name}"? การกระทำนี้ไม่สามารถย้อนกลับได้`}
-          confirmLabel="ลบอุปกรณ์"
-          cancelLabel="ยกเลิก"
+          description={`คุณแน่ใจหรือไม่ว่าต้องการลบ "${itemToDelete.name}"? การกระทำนี้ไม่สามารถย้อนกลับได้`}
+          confirmText="ลบอุปกรณ์"
+          cancelText="ยกเลิก"
           onConfirm={confirmDeleteItem}
           onCancel={() => setItemToDelete(null)}
           isDestructive

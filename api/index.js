@@ -559,7 +559,7 @@ app.patch('/api/items/:id', requireAdmin, async (req, res) => {
     const { id } = req.params;
     const updates = req.body;
     const items = await readSheet('Items');
-    const target = items.find(i => i.id === id);
+    const target = items.find(i => String(i.id) === String(id));
     
     if (!target) return res.status(404).json({ error: 'Not found' });
     
@@ -585,7 +585,7 @@ app.delete('/api/items/:id', requireAdmin, async (req, res) => {
   try {
     const { id } = req.params;
     const items = await readSheet('Items');
-    const target = items.find(i => i.id === id);
+    const target = items.find(i => String(i.id) === String(id));
     
     if (!target) return res.status(404).json({ error: 'Not found' });
     
