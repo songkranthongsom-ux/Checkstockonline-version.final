@@ -115,7 +115,7 @@ function rowsToObjects(rows) {
         const lowerVal = val.toLowerCase();
         if (lowerVal === 'true') val = true;
         else if (lowerVal === 'false') val = false;
-        else if (!isNaN(Number(val)) && val !== '' && !['employeeId', 'password', 'id', 'ticketId', 'batchId', 'itemId', 'userId'].includes(header)) val = Number(val);
+        else if (!isNaN(Number(val)) && val !== '' && !['employeeid', 'password', 'id', 'ticketid', 'batchid', 'itemid', 'userid'].includes(header.toLowerCase())) val = Number(val);
       }
       obj[header] = val;
     });
