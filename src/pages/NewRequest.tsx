@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../store/AuthContext';
 import { useData } from '../store/DataContext';
@@ -6,7 +6,7 @@ import { Card, CardContent } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { Input } from '../components/ui/Input';
 import { Badge } from '../components/ui/Badge';
-import { Package, Search, ShoppingCart, Plus, Minus, X, Heart, AlertCircle, Info } from 'lucide-react';
+import { Package, Search, ShoppingCart, Plus, Minus, X, Heart, AlertCircle, Info, ArrowUpDown } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { toast } from 'sonner';
 
@@ -18,11 +18,13 @@ type CartItem = {
 
 export const NewRequest = () => {
   const { user } = useAuth();
-  const { items, addRequests } = useData();
+  const { items, categories: dynamicCategories, addRequests } = useData();
   const navigate = useNavigate();
   
   const [search, setSearch] = useState('');
   const [category, setCategory] = useState<string>('all');
+  const [sortBy, setSortBy] = useState<'default' | 'name' | 'stock' | 'category'>('default');
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
   
   const [cart, setCart] = useState<CartItem[]>(() => {
     if (!user) return [];
@@ -76,17 +78,41 @@ export const NewRequest = () => {
     });
   };
 
-  const categories = ['all', 'favorites', ...Array.from(new Set(items.map(i => i.category)))];
+  const categoryList = useMemo(() => {
+    const names = dynamicCategories.map(c => c.name.trim()).filter(Boolean);
+    return ['all', 'favorites', ...names];
+  }, [dynamicCategories]);
   
-  const filteredItems = items.filter(i => {
-    const matchSearch = i.name.toLowerCase().includes(search.toLowerCase());
-    const matchCat = category === 'all' 
-      ? true 
-      : category === 'favorites' 
-        ? favorites.includes(i.id) 
-        : i.category === category;
-    return matchSearch && matchCat;
-  });
+  const filteredItems = useMemo(() => {
+    const filtered = items.filter(i => {
+      const itemCat = String(i.category || '').trim();
+      const matchSearch = `${i.name} ${itemCat} ${i.unit || ''} ${i.id || ''}`.toLowerCase().includes(search.toLowerCase());
+      const matchCat = category === 'all' 
+        ? true 
+        : category === 'favorites' 
+          ? favorites.includes(i.id) 
+          : itemCat.toLowerCase() === category.toLowerCase();
+      return matchSearch && matchCat;
+    });
+
+    if (sortBy === 'default') {
+      return filtered;
+    }
+
+    return [...filtered].sort((a, b) => {
+      let comparison = 0;
+      if (sortBy === 'name') {
+        comparison = (a.name || '').localeCompare(b.name || '', 'th');
+      } else if (sortBy === 'stock') {
+        comparison = Number(a.currentStock || 0) - Number(b.currentStock || 0);
+        if (comparison === 0) comparison = (a.name || '').localeCompare(b.name || '', 'th');
+      } else if (sortBy === 'category') {
+        comparison = (a.category || '').localeCompare(b.category || '', 'th');
+        if (comparison === 0) comparison = (a.name || '').localeCompare(b.name || '', 'th');
+      }
+      return sortDirection === 'asc' ? comparison : -comparison;
+    });
+  }, [items, search, category, favorites, sortBy, sortDirection]);
 
   const handleQuantityChange = (itemId: string, delta: number) => {
     setQuantities(prev => {
@@ -183,18 +209,45 @@ export const NewRequest = () => {
         {/* Old cart button removed */}
       </div>
 
-      <div className="bg-surface rounded-2xl border border-border p-4 flex flex-col sm:flex-row gap-4 items-center shadow-sm shadow-slate-900/[0.02]">
-        <div className="relative flex-1 w-full">
-          <Search size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-secondary" />
-          <Input 
-            placeholder="ค้นหาอุปกรณ์..." 
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-            className="pl-10"
-          />
+      <div className="bg-surface rounded-2xl border border-border p-4 flex flex-col gap-3 shadow-sm shadow-slate-900/[0.02]">
+        <div className="flex flex-col sm:flex-row gap-3 items-center">
+          <div className="relative flex-1 w-full">
+            <Search size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-secondary" />
+            <Input 
+              placeholder="ค้นหาอุปกรณ์..." 
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              className="pl-10"
+            />
+          </div>
+
+          <div className="flex items-center gap-1.5 bg-surface-alt p-1 rounded-xl border border-border w-full sm:w-auto shrink-0 justify-between sm:justify-start">
+            <span className="text-xs text-text-secondary pl-2 font-medium">เรียงตาม:</span>
+            <select
+              value={sortBy}
+              onChange={e => setSortBy(e.target.value as any)}
+              className="bg-transparent text-sm font-semibold text-text-primary focus:outline-none cursor-pointer pr-1 py-1"
+            >
+              <option value="default">ค่าเริ่มต้น</option>
+              <option value="name">ชื่อสินค้า (ก-ฮ)</option>
+              <option value="stock">สต็อกคงเหลือ</option>
+              <option value="category">หมวดหมู่</option>
+            </select>
+            {sortBy !== 'default' && (
+              <button
+                type="button"
+                onClick={() => setSortDirection(prev => prev === 'asc' ? 'desc' : 'asc')}
+                className="p-1.5 rounded-lg hover:bg-surface text-text-secondary hover:text-text-primary transition-colors"
+                title={sortDirection === 'asc' ? 'น้อยไปมาก / ก-ฮ' : 'มากไปน้อย / ฮ-ก'}
+              >
+                <ArrowUpDown size={16} className={`transition-transform duration-200 ${sortDirection === 'desc' ? 'rotate-180 text-primary' : ''}`} />
+              </button>
+            )}
+          </div>
         </div>
-        <div className="flex gap-2 overflow-x-auto w-full sm:w-auto pb-2 sm:pb-0">
-          {categories.map(cat => (
+
+        <div className="flex gap-2 overflow-x-auto w-full pb-1 custom-scrollbar">
+          {categoryList.map(cat => (
             <button
               key={cat}
               type="button"

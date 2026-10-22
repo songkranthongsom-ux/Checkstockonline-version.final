@@ -115,7 +115,7 @@ function rowsToObjects(rows) {
         const lowerVal = val.toLowerCase();
         if (lowerVal === 'true') val = true;
         else if (lowerVal === 'false') val = false;
-        else if (!isNaN(Number(val)) && val !== '' && !['employeeid', 'password', 'id', 'ticketid', 'batchid', 'itemid', 'userid'].includes(header.toLowerCase())) val = Number(val);
+        else if (!isNaN(Number(val)) && val !== '' && !['employeeid', 'password', 'id', 'ticketid', 'batchid', 'itemid', 'userid', 'category', 'name', 'remark', 'unit'].includes(header.toLowerCase())) val = Number(val);
       }
       obj[header] = val;
     });
@@ -125,23 +125,74 @@ function rowsToObjects(rows) {
   return data;
 }
 
+async function ensureSheetExists(tabName, defaultHeaders = []) {
+  if (!sheets) throw new Error('Sheets API not configured');
+  try {
+    const spreadsheet = await sheets.spreadsheets.get({ spreadsheetId: SPREADSHEET_ID });
+    const sheetExists = spreadsheet.data.sheets?.some(s => s.properties?.title === tabName);
+    if (!sheetExists) {
+      await sheets.spreadsheets.batchUpdate({
+        spreadsheetId: SPREADSHEET_ID,
+        requestBody: {
+          requests: [{
+            addSheet: {
+              properties: { title: tabName }
+            }
+          }]
+        }
+      });
+      if (defaultHeaders && defaultHeaders.length > 0) {
+        await sheets.spreadsheets.values.update({
+          spreadsheetId: SPREADSHEET_ID,
+          range: `${tabName}!A1`,
+          valueInputOption: 'USER_ENTERED',
+          requestBody: { values: [defaultHeaders] }
+        });
+      }
+    }
+  } catch (err) {
+    console.error(`Error ensuring sheet ${tabName} exists:`, err.message);
+  }
+}
+
 async function readSheet(tabName) {
   if (!sheets) throw new Error('Sheets API not configured');
-  const response = await sheets.spreadsheets.values.get({
-    spreadsheetId: SPREADSHEET_ID,
-    range: `${tabName}!A:Z`,
-  });
-  return rowsToObjects(response.data.values);
+  try {
+    const response = await sheets.spreadsheets.values.get({
+      spreadsheetId: SPREADSHEET_ID,
+      range: `${tabName}!A:Z`,
+    });
+    return rowsToObjects(response.data.values);
+  } catch (err) {
+    if (['Categories', 'Settings', 'Logs'].includes(tabName)) {
+      return [];
+    }
+    throw err;
+  }
 }
 
 async function appendToSheet(tabName, rowData) {
   if (!sheets) throw new Error('Sheets API not configured');
-  await sheets.spreadsheets.values.append({
-    spreadsheetId: SPREADSHEET_ID,
-    range: `${tabName}!A:A`,
-    valueInputOption: 'USER_ENTERED',
-    requestBody: { values: [rowData] },
-  });
+  try {
+    await sheets.spreadsheets.values.append({
+      spreadsheetId: SPREADSHEET_ID,
+      range: `${tabName}!A:A`,
+      valueInputOption: 'USER_ENTERED',
+      requestBody: { values: [rowData] },
+    });
+  } catch (err) {
+    if (tabName === 'Categories') {
+      await ensureSheetExists('Categories', ['id', 'name']);
+      await sheets.spreadsheets.values.append({
+        spreadsheetId: SPREADSHEET_ID,
+        range: `${tabName}!A:A`,
+        valueInputOption: 'USER_ENTERED',
+        requestBody: { values: [rowData] },
+      });
+    } else {
+      throw err;
+    }
+  }
 }
 
 async function updateRowInSheet(tabName, rowIndex, rowData) {
@@ -177,12 +228,19 @@ async function deleteRowInSheet(tabName, rowIndex) {
   });
 }
 
-async function getHeaders(tabName) {
-  const response = await sheets.spreadsheets.values.get({
-    spreadsheetId: SPREADSHEET_ID,
-    range: `${tabName}!1:1`,
-  });
-  return response.data.values[0];
+async function getHeaders(tabName, fallbackHeaders = []) {
+  try {
+    const response = await sheets.spreadsheets.values.get({
+      spreadsheetId: SPREADSHEET_ID,
+      range: `${tabName}!1:1`,
+    });
+    if (response.data.values && response.data.values[0]) {
+      return response.data.values[0];
+    }
+  } catch (err) {
+    // If tab doesn't exist yet, return fallback
+  }
+  return fallbackHeaders;
 }
 
 async function logAction(actionType, userId, details, status) {
@@ -324,6 +382,9 @@ app.patch('/api/auth/password', async (req, res) => {
 app.get('/api/sync', async (req, res) => {
   try {
     if (!sheets) throw new Error('Sheets API not configured');
+    
+    await ensureSheetExists('Categories', ['id', 'name']);
+
     const response = await sheets.spreadsheets.values.batchGet({
       spreadsheetId: SPREADSHEET_ID,
       ranges: ['Users!A:Z', 'Departments!A:Z', 'Items!A:Z', 'Requests!A:Z', 'Batches!A:Z', 'Categories!A:Z']
@@ -336,7 +397,26 @@ app.get('/api/sync', async (req, res) => {
     const items = rowsToObjects(valueRanges[2]?.values);
     const requests = rowsToObjects(valueRanges[3]?.values);
     const batches = rowsToObjects(valueRanges[4]?.values);
-    const categories = rowsToObjects(valueRanges[5]?.values);
+    let categories = rowsToObjects(valueRanges[5]?.values);
+
+    // If Categories sheet is empty, auto-seed with unique categories found in Items
+    if (!categories || categories.length === 0) {
+      const existingItemCats = Array.from(new Set(items.map(i => String(i.category || '').trim()).filter(Boolean)));
+      if (existingItemCats.length > 0) {
+        const seedRows = existingItemCats.map((cat, idx) => [`cat_${Date.now()}_${idx}`, cat]);
+        try {
+          await sheets.spreadsheets.values.append({
+            spreadsheetId: SPREADSHEET_ID,
+            range: 'Categories!A:A',
+            valueInputOption: 'USER_ENTERED',
+            requestBody: { values: seedRows },
+          });
+          categories = seedRows.map(r => ({ id: r[0], name: r[1] }));
+        } catch (seedErr) {
+          console.warn('Could not auto-seed categories:', seedErr.message);
+        }
+      }
+    }
 
     let settings = [];
     try {
@@ -480,6 +560,7 @@ app.post('/api/settings', requireAdmin, async (req, res) => {
 // --- Categories Routes ---
 app.get('/api/categories', async (req, res) => {
   try {
+    await ensureSheetExists('Categories', ['id', 'name']);
     const categories = await readSheet('Categories');
     res.json(categories);
   } catch (err) {
@@ -490,15 +571,19 @@ app.get('/api/categories', async (req, res) => {
 app.post('/api/categories', requireAdmin, async (req, res) => {
   try {
     const category = req.body;
-    let headers;
-    try {
-      headers = await getHeaders('Categories');
-    } catch (e) {
-      // If tab doesn't exist or is empty, we should ideally handle it, 
-      // but assuming it has at least 'id', 'name'
-      headers = ['id', 'name'];
+    const catName = String(category.name || '').trim();
+    if (!catName) return res.status(400).json({ error: 'Category name is required' });
+    
+    await ensureSheetExists('Categories', ['id', 'name']);
+    const existingCategories = await readSheet('Categories');
+    const existing = existingCategories.find(c => String(c.name || '').trim().toLowerCase() === catName.toLowerCase());
+    if (existing) {
+      return res.status(200).json(existing);
     }
+
+    const headers = await getHeaders('Categories', ['id', 'name']);
     category.id = `cat_${Date.now()}`;
+    category.name = catName;
     const rowData = headers.map(h => category[h] !== undefined ? category[h] : '');
     await appendToSheet('Categories', rowData);
     res.status(201).json(category);

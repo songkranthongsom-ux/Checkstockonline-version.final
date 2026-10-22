@@ -68,6 +68,16 @@ const initialData = [
     title: 'Batches',
     headers: ['id', 'departmentId', 'coordinatorId', 'status', 'createdAt', 'completedAt'],
     mockRows: []
+  },
+  {
+    title: 'Categories',
+    headers: ['id', 'name'],
+    mockRows: [
+      ['cat_1', 'อุปกรณ์สำนักงาน'],
+      ['cat_2', 'อุปกรณ์เครื่องเขียน'],
+      ['cat_3', 'อุปกรณ์ IT'],
+      ['cat_4', 'อุปกรณ์เบ็ดเตล็ด']
+    ]
   }
 ];
 

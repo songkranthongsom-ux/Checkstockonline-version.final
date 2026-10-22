@@ -23,9 +23,9 @@ interface DataContextType {
   distributeBatch: (id: string) => Promise<void>;
   
   // Admin Mutations
-  addItem: (item: Item, actorName?: string) => void;
-  updateItem: (id: string, item: Partial<Item>, actorName?: string) => void;
-  deleteItem: (id: string, actorName?: string) => void;
+  addItem: (item: Item, actorName?: string) => Promise<void>;
+  updateItem: (id: string, item: Partial<Item>, actorName?: string) => Promise<void>;
+  deleteItem: (id: string, actorName?: string) => Promise<void>;
   addUser: (user: Omit<User, 'id'>) => Promise<boolean>;
   deleteUser: (id: string) => Promise<boolean>;
   updateUser: (id: string, updates: Partial<User>) => Promise<void>;
@@ -190,45 +190,65 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const addItem = async (item: Item, _actorName?: string) => {
+    const safeItem = {
+      ...item,
+      category: String(item.category || '').trim(),
+      name: String(item.name || '').trim(),
+      unit: String(item.unit || '').trim()
+    };
+    setItems(prev => {
+      const idx = prev.findIndex(i => i.id === safeItem.id);
+      if (idx >= 0) return prev.map((it, i) => i === idx ? safeItem : it);
+      return [...prev, safeItem];
+    });
     try {
       const response = await fetch(`${API_URL}/items`, {
         method: 'POST',
         headers: getHeaders(),
-        body: JSON.stringify(item)
+        body: JSON.stringify(safeItem)
       });
       if (!response.ok) throw new Error('Could not create item');
-      await loadData();
+      await loadData(true);
     } catch (error) {
       console.error(error);
+      await loadData(true);
       throw error;
     }
   };
 
   const updateItem = async (id: string, item: Partial<Item>, _actorName?: string) => {
+    const safeUpdates = { ...item };
+    if (safeUpdates.category !== undefined) {
+      safeUpdates.category = String(safeUpdates.category).trim();
+    }
+    setItems(prev => prev.map(i => i.id === id ? { ...i, ...safeUpdates } : i));
     try {
       const response = await fetch(`${API_URL}/items/${encodeURIComponent(id)}`, {
         method: 'PATCH',
         headers: getHeaders(),
-        body: JSON.stringify(item)
+        body: JSON.stringify(safeUpdates)
       });
       if (!response.ok) throw new Error('Could not update item');
-      await loadData();
+      await loadData(true);
     } catch (error) {
       console.error(error);
+      await loadData(true);
       throw error;
     }
   };
 
   const deleteItem = async (id: string, _actorName?: string) => {
+    setItems(prev => prev.filter(i => i.id !== id));
     try {
       const response = await fetch(`${API_URL}/items/${encodeURIComponent(id)}`, {
         method: 'DELETE',
         headers: getHeaders()
       });
       if (!response.ok) throw new Error('Could not delete item');
-      await loadData();
+      await loadData(true);
     } catch (error) {
       console.error(error);
+      await loadData(true);
       throw error;
     }
   };
@@ -278,30 +298,42 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const addCategory = async (name: string) => {
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    const tempId = `cat_${Date.now()}`;
+    setCategories(prev => {
+      if (prev.some(c => c.name.trim().toLowerCase() === trimmed.toLowerCase())) return prev;
+      return [...prev, { id: tempId, name: trimmed }];
+    });
     try {
       const response = await fetch(`${API_URL}/categories`, {
         method: 'POST',
         headers: getHeaders(),
-        body: JSON.stringify({ name })
+        body: JSON.stringify({ name: trimmed })
       });
       if (!response.ok) throw new Error('Could not create category');
-      await loadData();
+      const saved = await response.json();
+      setCategories(prev => prev.map(c => c.id === tempId ? saved : c));
+      await loadData(true);
     } catch (error) {
       console.error(error);
+      await loadData(true);
       throw error;
     }
   };
 
   const deleteCategory = async (id: string) => {
+    setCategories(prev => prev.filter(c => c.id !== id));
     try {
       const response = await fetch(`${API_URL}/categories/${encodeURIComponent(id)}`, {
         method: 'DELETE',
         headers: getHeaders()
       });
       if (!response.ok) throw new Error('Failed to delete category');
-      await loadData();
+      await loadData(true);
     } catch (err) {
       console.error(err);
+      await loadData(true);
       throw err;
     }
   };
@@ -321,6 +353,21 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
+  const combinedCategories = React.useMemo(() => {
+    const map = new Map<string, { id: string; name: string }>();
+    categories.forEach(c => {
+      const trimmed = String(c.name || '').trim();
+      if (trimmed) map.set(trimmed.toLowerCase(), { id: c.id, name: trimmed });
+    });
+    items.forEach(item => {
+      const trimmed = String(item.category || '').trim();
+      if (trimmed && !map.has(trimmed.toLowerCase())) {
+        map.set(trimmed.toLowerCase(), { id: `cat_auto_${trimmed}`, name: trimmed });
+      }
+    });
+    return Array.from(map.values()).sort((a, b) => a.name.localeCompare(b.name, 'th'));
+  }, [categories, items]);
+
   return (
     <DataContext.Provider value={{
       departments,
@@ -328,7 +375,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       users,
       requests,
       batches,
-      categories,
+      categories: combinedCategories,
       settings,
       addRequest,
       addRequests,

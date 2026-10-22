@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { Archive, Check, Search, ArrowDownWideNarrow, ShoppingCart, Plus, Minus, X, PackagePlus, Package } from 'lucide-react';
+import { Archive, Check, Search, ArrowUpDown, ShoppingCart, Plus, Minus, X, PackagePlus, Package } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuth } from '../store/AuthContext';
 import { useData } from '../store/DataContext';
@@ -12,12 +12,16 @@ import { Item, ItemCategory } from '../types';
 export const AdminStock = () => {
   const { user } = useAuth();
   const { items, categories: dynamicCategories, updateItem, addRequests } = useData();
-  const categoryNames = dynamicCategories.map(c => c.name);
+  const categoryNames = useMemo(() => dynamicCategories.map(c => c.name), [dynamicCategories]);
   const [search, setSearch] = useState('');
   const [countedStock, setCountedStock] = useState<Record<string, { stock?: string }>>({});
   const [viewMode, setViewMode] = useState<'gallery' | 'list'>('list');
   const [activeCategory, setActiveCategory] = useState<string | 'ทั้งหมด'>('ทั้งหมด');
-  const [sortOrder, setSortOrder] = useState<'default' | 'desc' | 'asc'>('default');
+  
+  // Sorting State
+  const [sortBy, setSortBy] = useState<'stock' | 'name' | 'category' | 'id'>('stock');
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
+
   const [restockCart, setRestockCart] = useState<{itemId: string, quantity: number}[]>([]);
   const [isCartOpen, setIsCartOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -26,18 +30,28 @@ export const AdminStock = () => {
   
   const visibleItems = useMemo(() => {
     const filtered = items.filter(item => {
-      const matchesSearch = `${item.name} ${item.category} ${item.unit}`.toLowerCase().includes(search.toLowerCase());
-      const matchesCategory = activeCategory === 'ทั้งหมด' || item.category === activeCategory;
+      const itemCat = String(item.category || '').trim();
+      const matchesSearch = `${item.name} ${itemCat} ${item.unit} ${item.id}`.toLowerCase().includes(search.toLowerCase());
+      const matchesCategory = activeCategory === 'ทั้งหมด' || itemCat.toLowerCase() === activeCategory.trim().toLowerCase();
       return matchesSearch && matchesCategory;
     });
 
-    if (sortOrder === 'desc') {
-      return [...filtered].sort((a, b) => Number(b.currentStock || 0) - Number(a.currentStock || 0));
-    } else if (sortOrder === 'asc') {
-      return [...filtered].sort((a, b) => Number(a.currentStock || 0) - Number(b.currentStock || 0));
-    }
-    return filtered;
-  }, [items, search, activeCategory, sortOrder]);
+    return [...filtered].sort((a, b) => {
+      let comparison = 0;
+      if (sortBy === 'stock') {
+        comparison = Number(a.currentStock || 0) - Number(b.currentStock || 0);
+        if (comparison === 0) comparison = (a.name || '').localeCompare(b.name || '', 'th');
+      } else if (sortBy === 'name') {
+        comparison = (a.name || '').localeCompare(b.name || '', 'th');
+      } else if (sortBy === 'category') {
+        comparison = (a.category || '').localeCompare(b.category || '', 'th');
+        if (comparison === 0) comparison = (a.name || '').localeCompare(b.name || '', 'th');
+      } else if (sortBy === 'id') {
+        comparison = (a.id || '').localeCompare(b.id || '', 'th', { numeric: true });
+      }
+      return sortDirection === 'asc' ? comparison : -comparison;
+    });
+  }, [items, search, activeCategory, sortBy, sortDirection]);
 
   const saveCount = (id: string) => { 
     const stockVal = countedStock[id]?.stock;
@@ -143,17 +157,29 @@ export const AdminStock = () => {
             </button>
           ))}
         </div>
-        <div className="flex items-center gap-2">
-          <button 
-            onClick={() => setSortOrder(prev => prev === 'default' ? 'desc' : prev === 'desc' ? 'asc' : 'default')}
-            className={`flex items-center justify-center h-10 w-10 shrink-0 rounded-xl border transition-all ${sortOrder !== 'default' ? 'bg-primary/10 border-primary/20 text-primary' : 'bg-surface-alt border-border text-text-secondary hover:bg-surface-alt hover:text-text-primary'}`}
-            title="เรียงตามยอดสต็อกคงเหลือ"
-          >
-            <ArrowDownWideNarrow 
-              size={18} 
-              className={`transition-transform duration-300 ${sortOrder === 'asc' ? 'rotate-180' : sortOrder === 'default' ? 'opacity-40' : ''}`} 
-            />
-          </button>
+        <div className="flex flex-wrap items-center gap-2">
+          {/* Sorting Controls */}
+          <div className="flex items-center gap-1.5 bg-surface-alt p-1 rounded-xl border border-border">
+            <span className="text-xs text-text-secondary pl-2 font-medium">เรียงตาม:</span>
+            <select
+              value={sortBy}
+              onChange={e => setSortBy(e.target.value as any)}
+              className="bg-transparent text-sm font-semibold text-text-primary focus:outline-none cursor-pointer pr-1 py-1"
+            >
+              <option value="stock">สต็อกคงเหลือ</option>
+              <option value="name">ชื่อสินค้า (ก-ฮ)</option>
+              <option value="category">หมวดหมู่</option>
+              <option value="id">รหัสสินค้า</option>
+            </select>
+            <button
+              onClick={() => setSortDirection(prev => prev === 'asc' ? 'desc' : 'asc')}
+              className="p-1.5 rounded-lg hover:bg-surface text-text-secondary hover:text-text-primary transition-colors"
+              title={sortDirection === 'asc' ? 'น้อยไปมาก / ก-ฮ' : 'มากไปน้อย / ฮ-ก'}
+            >
+              <ArrowUpDown size={16} className={`transition-transform duration-200 ${sortDirection === 'desc' ? 'rotate-180 text-primary' : ''}`} />
+            </button>
+          </div>
+
           <div className="flex bg-surface-alt p-1 rounded-xl border border-border">
             <button
               onClick={() => setViewMode('gallery')}

@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { Edit3, PackagePlus, Search, Trash2 } from 'lucide-react';
+import React, { useState, useMemo } from 'react';
+import { Edit3, PackagePlus, Search, Trash2, ArrowUpDown, Plus } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuth } from '../store/AuthContext';
 import { useData } from '../store/DataContext';
@@ -15,37 +15,102 @@ const emptyForm = { id: '', name: '', category: '', unit: 'PCS.', imageUrl: '', 
 export const AdminItems = () => {
   const { user } = useAuth();
   const { items, categories: dynamicCategories, addItem, updateItem, deleteItem, addCategory, deleteCategory } = useData();
-  const categoryNames = dynamicCategories.map(c => c.name);
+  const categoryNames = useMemo(() => dynamicCategories.map(c => c.name), [dynamicCategories]);
   
   const [editingId, setEditingId] = useState<string | null>(null);
   const [formData, setFormData] = useState(emptyForm);
+  const [isCustomCategory, setIsCustomCategory] = useState(false);
+  const [customCategoryName, setCustomCategoryName] = useState('');
+  const [isSaving, setIsSaving] = useState(false);
+
   const [search, setSearch] = useState('');
   const [itemToDelete, setItemToDelete] = useState<Item | null>(null);
   const [viewMode, setViewMode] = useState<'gallery' | 'list'>('list');
   const [isCategoryModalOpen, setIsCategoryModalOpen] = useState(false);
   const [newCategoryName, setNewCategoryName] = useState('');
+  const [activeCategory, setActiveCategory] = useState<string | 'ทั้งหมด'>('ทั้งหมด');
+
+  // Sorting State
+  const [sortBy, setSortBy] = useState<'name' | 'category' | 'stock' | 'id'>('name');
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
 
   if (!user || !user.role.includes('ADMIN')) return null;
 
-  const startCreate = () => { setEditingId('new'); setFormData({ ...emptyForm, category: categoryNames[0] || '' }); };
-  const startEdit = (item: Item) => { setEditingId(item.id); setFormData({ id: item.id, name: item.name, category: item.category, unit: item.unit, imageUrl: item.imageUrl || '', currentStock: Number(item.currentStock) || 0, price: item.price !== undefined ? Number(item.price) : undefined, remark: item.remark || '' }); };
-  const save = () => {
+  const startCreate = () => { 
+    setEditingId('new'); 
+    setIsCustomCategory(false);
+    setCustomCategoryName('');
+    setFormData({ ...emptyForm, category: categoryNames[0] || 'อุปกรณ์สำนักงาน' }); 
+  };
+
+  const startEdit = (item: Item) => { 
+    setEditingId(item.id); 
+    setIsCustomCategory(false);
+    setCustomCategoryName('');
+    setFormData({ 
+      id: item.id, 
+      name: item.name, 
+      category: item.category || '', 
+      unit: item.unit, 
+      imageUrl: item.imageUrl || '', 
+      currentStock: Number(item.currentStock) || 0, 
+      price: item.price !== undefined ? Number(item.price) : undefined, 
+      remark: item.remark || '' 
+    }); 
+  };
+
+  const save = async () => {
     if (!formData.name.trim() || !formData.unit.trim() || !formData.id.trim()) {
-      alert('กรุณากรอกข้อมูลที่จำเป็นให้ครบถ้วน (รหัสสินค้า, ชื่อ, หน่วยนับ)');
+      toast.error('กรุณากรอกข้อมูลที่จำเป็นให้ครบถ้วน (รหัสสินค้า, ชื่อ, หน่วยนับ)');
       return;
     }
-    const dataToSave = { ...formData };
-    if (dataToSave.price === undefined || isNaN(dataToSave.price)) delete dataToSave.price;
-    
-    if (editingId === 'new') {
-      addItem(dataToSave, user.name);
-      toast.success('เพิ่มอุปกรณ์ใหม่เรียบร้อยแล้ว');
-    } else if (editingId) {
-      updateItem(editingId, dataToSave, user.name);
-      toast.success('แก้ไขข้อมูลอุปกรณ์เรียบร้อยแล้ว');
+
+    setIsSaving(true);
+    try {
+      let finalCategory = (isCustomCategory ? customCategoryName : formData.category).trim();
+      if (!finalCategory) {
+        finalCategory = categoryNames[0] || 'ทั่วไป';
+      }
+
+      // If user typed a new category, save to categories database too
+      if (finalCategory && !categoryNames.includes(finalCategory)) {
+        await addCategory(finalCategory);
+      }
+
+      const dataToSave: Item = {
+        ...formData,
+        id: formData.id.trim(),
+        name: formData.name.trim(),
+        category: finalCategory,
+        unit: formData.unit.trim().toUpperCase(),
+        imageUrl: formData.imageUrl?.trim() || '',
+        remark: formData.remark?.trim() || '',
+        currentStock: Math.max(0, Number(formData.currentStock) || 0),
+      };
+
+      if (dataToSave.price === undefined || isNaN(Number(dataToSave.price))) {
+        delete dataToSave.price;
+      } else {
+        dataToSave.price = Number(dataToSave.price);
+      }
+      
+      if (editingId === 'new') {
+        await addItem(dataToSave, user.name);
+        toast.success('เพิ่มอุปกรณ์ใหม่เรียบร้อยแล้ว');
+      } else if (editingId) {
+        await updateItem(editingId, dataToSave, user.name);
+        toast.success('แก้ไขข้อมูลอุปกรณ์เรียบร้อยแล้ว');
+      }
+      setEditingId(null);
+      setIsCustomCategory(false);
+      setCustomCategoryName('');
+    } catch (err: any) {
+      toast.error(err?.message || 'เกิดข้อผิดพลาดในการบันทึกข้อมูล');
+    } finally {
+      setIsSaving(false);
     }
-    setEditingId(null);
   };
+
   const confirmDeleteItem = async () => {
     if (itemToDelete) {
       try {
@@ -58,13 +123,17 @@ export const AdminItems = () => {
       }
     }
   };
-  const [activeCategory, setActiveCategory] = useState<string | 'ทั้งหมด'>('ทั้งหมด');
 
-  const handleAddCategory = () => {
-    if (newCategoryName.trim()) {
-      addCategory(newCategoryName.trim());
-      setNewCategoryName('');
-      toast.success('เพิ่มหมวดหมู่เรียบร้อยแล้ว');
+  const handleAddCategory = async () => {
+    const trimmed = newCategoryName.trim();
+    if (trimmed) {
+      try {
+        await addCategory(trimmed);
+        setNewCategoryName('');
+        toast.success('เพิ่มหมวดหมู่เรียบร้อยแล้ว');
+      } catch (err) {
+        toast.error('ไม่สามารถเพิ่มหมวดหมู่ได้');
+      }
     }
   };
 
@@ -79,11 +148,30 @@ export const AdminItems = () => {
     }
   };
   
-  const visibleItems = items.filter(item => {
-    const matchesSearch = `${item.name} ${item.category} ${item.unit}`.toLowerCase().includes(search.toLowerCase());
-    const matchesCategory = activeCategory === 'ทั้งหมด' || item.category === activeCategory;
-    return matchesSearch && matchesCategory;
-  });
+  const visibleItems = useMemo(() => {
+    const filtered = items.filter(item => {
+      const itemCat = String(item.category || '').trim();
+      const matchesSearch = `${item.name} ${itemCat} ${item.unit} ${item.id}`.toLowerCase().includes(search.toLowerCase());
+      const matchesCategory = activeCategory === 'ทั้งหมด' || itemCat.toLowerCase() === activeCategory.trim().toLowerCase();
+      return matchesSearch && matchesCategory;
+    });
+
+    return [...filtered].sort((a, b) => {
+      let comparison = 0;
+      if (sortBy === 'name') {
+        comparison = (a.name || '').localeCompare(b.name || '', 'th');
+      } else if (sortBy === 'category') {
+        comparison = (a.category || '').localeCompare(b.category || '', 'th');
+        if (comparison === 0) comparison = (a.name || '').localeCompare(b.name || '', 'th');
+      } else if (sortBy === 'stock') {
+        comparison = Number(a.currentStock || 0) - Number(b.currentStock || 0);
+        if (comparison === 0) comparison = (a.name || '').localeCompare(b.name || '', 'th');
+      } else if (sortBy === 'id') {
+        comparison = (a.id || '').localeCompare(b.id || '', 'th', { numeric: true });
+      }
+      return sortDirection === 'asc' ? comparison : -comparison;
+    });
+  }, [items, search, activeCategory, sortBy, sortDirection]);
 
   return (
     <div className="space-y-6">
@@ -104,7 +192,7 @@ export const AdminItems = () => {
       </div>
 
       {editingId && (
-        <Card className="border-primary/30 p-5 sm:p-6">
+        <Card className="border-primary/30 p-5 sm:p-6 shadow-md animate-in fade-in duration-200">
           <div className="mb-5 flex items-center justify-between">
             <h2 className="text-lg font-bold">{editingId === 'new' ? 'เพิ่มอุปกรณ์ใหม่' : 'แก้ไขข้อมูลอุปกรณ์'}</h2>
             <Button variant="ghost" size="sm" onClick={() => setEditingId(null)}>ปิด</Button>
@@ -116,12 +204,70 @@ export const AdminItems = () => {
             <Field label="ชื่อรายการ" className="xl:col-span-1 md:col-span-2">
               <Input autoFocus={editingId !== 'new'} value={formData.name} onChange={event => setFormData({ ...formData, name: event.target.value })} placeholder="เช่น กระดาษถ่ายเอกสาร A4" />
             </Field>
+            
             <Field label="หมวดหมู่">
-              <select className="select-control" value={formData.category} onChange={event => setFormData({ ...formData, category: event.target.value })}>
-                {categoryNames.length === 0 && <option value="">ไม่มีหมวดหมู่</option>}
-                {categoryNames.map(category => <option key={category} value={category}>{category}</option>)}
-              </select>
+              {!isCustomCategory ? (
+                <div className="flex gap-2">
+                  <select 
+                    className="select-control flex-1" 
+                    value={formData.category} 
+                    onChange={event => {
+                      if (event.target.value === '__NEW__') {
+                        setIsCustomCategory(true);
+                        setCustomCategoryName('');
+                      } else {
+                        setFormData({ ...formData, category: event.target.value });
+                      }
+                    }}
+                  >
+                    {categoryNames.length === 0 && <option value="">ไม่มีหมวดหมู่</option>}
+                    {formData.category && !categoryNames.includes(formData.category) && (
+                      <option value={formData.category}>{formData.category}</option>
+                    )}
+                    {categoryNames.map(category => (
+                      <option key={category} value={category}>{category}</option>
+                    ))}
+                    <option value="__NEW__">+ สร้างหมวดหมู่ใหม่...</option>
+                  </select>
+                  <Button 
+                    type="button" 
+                    variant="outline" 
+                    size="sm" 
+                    className="shrink-0 text-xs px-2.5" 
+                    onClick={() => { setIsCustomCategory(true); setCustomCategoryName(''); }}
+                    title="พิมพ์ชื่อหมวดใหม่ทันที"
+                  >
+                    <Plus size={14} className="mr-1" /> หมวดใหม่
+                  </Button>
+                </div>
+              ) : (
+                <div className="flex gap-2">
+                  <Input 
+                    autoFocus 
+                    placeholder="พิมพ์ชื่อหมวดใหม่..." 
+                    value={customCategoryName} 
+                    onChange={e => {
+                      setCustomCategoryName(e.target.value);
+                      setFormData({ ...formData, category: e.target.value });
+                    }} 
+                    className="flex-1"
+                  />
+                  <Button 
+                    type="button" 
+                    variant="ghost" 
+                    size="sm" 
+                    className="text-xs shrink-0" 
+                    onClick={() => {
+                      setIsCustomCategory(false);
+                      setFormData({ ...formData, category: categoryNames[0] || '' });
+                    }}
+                  >
+                    เลือกหมวดเดิม
+                  </Button>
+                </div>
+              )}
             </Field>
+
             <Field label="หน่วยนับ">
               <input className="select-control" list="common-units" value={formData.unit} onChange={event => setFormData({ ...formData, unit: event.target.value.toUpperCase() })} placeholder="เลือกหรือพิมพ์หน่วย" />
               <datalist id="common-units">{commonUnits.map(unit => <option key={unit} value={unit} />)}</datalist>
@@ -140,17 +286,21 @@ export const AdminItems = () => {
             </Field>
           </div>
           <div className="mt-5 flex justify-end gap-2">
-            <Button variant="secondary" onClick={() => setEditingId(null)}>ยกเลิก</Button>
-            <Button onClick={save}>บันทึกข้อมูล</Button>
+            <Button variant="secondary" onClick={() => setEditingId(null)} disabled={isSaving}>ยกเลิก</Button>
+            <Button onClick={save} disabled={isSaving}>
+              {isSaving ? 'กำลังบันทึก...' : 'บันทึกข้อมูล'}
+            </Button>
           </div>
         </Card>
       )}
 
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+      {/* Filter and Sort Toolbar */}
+      <div className="flex flex-col gap-4">
+        {/* Category Filter Pills */}
         <div className="flex gap-2 overflow-x-auto pb-2 custom-scrollbar">
           <button
             onClick={() => setActiveCategory('ทั้งหมด')}
-            className={`whitespace-nowrap px-4 py-2 rounded-full text-sm font-semibold transition-colors border ${activeCategory === 'ทั้งหมด' ? 'bg-primary text-white border-primary' : 'bg-surface border-border text-text-secondary hover:bg-surface-alt'}`}
+            className={`whitespace-nowrap px-4 py-2 rounded-full text-sm font-semibold transition-colors border ${activeCategory === 'ทั้งหมด' ? 'bg-primary text-white border-primary shadow-sm' : 'bg-surface border-border text-text-secondary hover:bg-surface-alt'}`}
           >
             ทั้งหมด
           </button>
@@ -158,33 +308,66 @@ export const AdminItems = () => {
             <button
               key={category}
               onClick={() => setActiveCategory(category)}
-              className={`whitespace-nowrap px-4 py-2 rounded-full text-sm font-semibold transition-colors border ${activeCategory === category ? 'bg-primary text-white border-primary' : 'bg-surface border-border text-text-secondary hover:bg-surface-alt'}`}
+              className={`whitespace-nowrap px-4 py-2 rounded-full text-sm font-semibold transition-colors border ${activeCategory === category ? 'bg-primary text-white border-primary shadow-sm' : 'bg-surface border-border text-text-secondary hover:bg-surface-alt'}`}
             >
               {category}
             </button>
           ))}
         </div>
         
-        <div className="flex items-center gap-2">
-          <div className="flex bg-surface-alt p-1 rounded-xl border border-border">
-            <button
-              onClick={() => setViewMode('gallery')}
-              className={`px-3 py-1.5 text-sm font-semibold rounded-lg transition-all ${viewMode === 'gallery' ? 'bg-surface shadow-sm text-text-primary' : 'text-text-secondary hover:text-text-primary'}`}
-            >
-              Gallery
-            </button>
-            <button
-              onClick={() => setViewMode('list')}
-              className={`px-3 py-1.5 text-sm font-semibold rounded-lg transition-all ${viewMode === 'list' ? 'bg-surface shadow-sm text-text-primary' : 'text-text-secondary hover:text-text-primary'}`}
-            >
-              List
-            </button>
+        {/* Controls Bar: Sort, View Mode, Search */}
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+          {/* Sorting Controls */}
+          <div className="flex items-center gap-2 flex-wrap">
+            <div className="flex items-center gap-1.5 bg-surface-alt px-3 py-1.5 rounded-xl border border-border text-sm">
+              <span className="text-xs text-text-secondary whitespace-nowrap">เรียงตาม:</span>
+              <select
+                value={sortBy}
+                onChange={e => setSortBy(e.target.value as any)}
+                className="bg-transparent text-sm font-semibold text-text-primary focus:outline-none cursor-pointer"
+              >
+                <option value="name">ชื่อสินค้า (ก-ฮ)</option>
+                <option value="category">หมวดหมู่</option>
+                <option value="stock">สต็อกคงเหลือ</option>
+                <option value="id">รหัสสินค้า</option>
+              </select>
+              <button
+                type="button"
+                onClick={() => setSortDirection(prev => prev === 'asc' ? 'desc' : 'asc')}
+                className="ml-1 p-1 hover:bg-surface rounded-lg text-text-secondary hover:text-text-primary transition-colors flex items-center gap-1 text-xs"
+                title={sortDirection === 'asc' ? 'สลับเป็น: มากไปน้อย / ฮ-ก' : 'สลับเป็น: น้อยไปมาก / ก-ฮ'}
+              >
+                <ArrowUpDown size={15} className={`transition-transform duration-200 ${sortDirection === 'desc' ? 'rotate-180 text-primary' : 'text-primary'}`} />
+                <span className="text-[11px] font-medium hidden md:inline">{sortDirection === 'asc' ? 'น้อยไปมาก' : 'มากไปน้อย'}</span>
+              </button>
+            </div>
+            
+            <span className="text-xs text-text-secondary ml-1">
+              ({visibleItems.length} รายการ)
+            </span>
           </div>
-          <div className="relative w-full sm:w-64 shrink-0">
-          <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-secondary" />
-          <Input className="h-10 pl-9 rounded-full" value={search} onChange={event => setSearch(event.target.value)} placeholder="ค้นหารายการ..." />
+
+          <div className="flex items-center gap-2">
+            <div className="flex bg-surface-alt p-1 rounded-xl border border-border shrink-0">
+              <button
+                onClick={() => setViewMode('gallery')}
+                className={`px-3 py-1.5 text-sm font-semibold rounded-lg transition-all ${viewMode === 'gallery' ? 'bg-surface shadow-sm text-text-primary' : 'text-text-secondary hover:text-text-primary'}`}
+              >
+                Gallery
+              </button>
+              <button
+                onClick={() => setViewMode('list')}
+                className={`px-3 py-1.5 text-sm font-semibold rounded-lg transition-all ${viewMode === 'list' ? 'bg-surface shadow-sm text-text-primary' : 'text-text-secondary hover:text-text-primary'}`}
+              >
+                List
+              </button>
+            </div>
+            <div className="relative flex-1 sm:w-64 sm:flex-initial shrink-0">
+              <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-secondary" />
+              <Input className="h-10 pl-9 rounded-full" value={search} onChange={event => setSearch(event.target.value)} placeholder="ค้นหารายการ..." />
+            </div>
+          </div>
         </div>
-      </div>
       </div>
 
       <div className={viewMode === 'gallery' ? "grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6" : "flex flex-col gap-3"}>
